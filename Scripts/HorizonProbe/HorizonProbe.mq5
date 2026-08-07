@@ -1,147 +1,146 @@
 //+------------------------------------------------------------------+
-//| HorizonProbe.mq5 — LE PLAFOND DE L'ORACLE, MESURÉ PAR HORIZON |
+//| HorizonProbe.mq5 — THE ORACLE CEILING, MEASURED PER HORIZON     |
 //|                                                                  |
-//| ⚠️ C'EST UN SCRIPT, PAS UN EXPERT ADVISOR : il ne trade RIEN, il |
-//| n'ouvre RIEN, il ne lit aucun paramètre d'EA. Même esprit que |
-//| le passeport d'instrument — un outil de DIAGNOSTIC AUTONOME et   |
-//| DÉTACHABLE : aucun #include, aucune dépendance externe.  |
-//| Il se copie tel quel dans n'importe quel terminal.               |
+//| ⚠️ THIS IS A SCRIPT, NOT AN EXPERT ADVISOR: it trades NOTHING,   |
+//| it opens NOTHING, it reads no EA parameter. Same spirit as an    |
+//| instrument passport — a STANDALONE, DETACHABLE diagnostic tool:  |
+//| no #include, no external dependency.                             |
+//| It can be copied as is into any terminal.                        |
 //|                                                                  |
-//| POURQUOI IL EXISTE : le plafond de l'oracle par horizon est souvent   |
-//| ESTIMÉ — mise à l'échelle en racine du temps et approximation    |
-//| gaussienne. L'or a des queues épaisses, et une gaussienne |
-//| sous-estime précisément ce qui compte : les grands mouvements.   |
-//| sous-estime précisément ce qui compte : les grands mouvements.   |
-//| Ce script REMPLACE le calcul par une MESURE : toutes les         |
-//| fenêtres glissantes, le coût réel observé, aucune hypothèse.     |
+//| WHY IT EXISTS: the oracle ceiling per horizon is usually         |
+//| ESTIMATED — square-root-of-time scaling plus a Gaussian          |
+//| approximation. Gold has fat tails, and a Gaussian underestimates |
+//| precisely what matters: the large moves.                         |
+//| This script REPLACES the calculation with a MEASUREMENT: every   |
+//| rolling window, the real observed cost, no assumption.           |
 //|                                                                  |
-//| ── CE QU'IL PUBLIE, HORIZON PAR HORIZON (H en MINUTES) ─────────  |
-//| • PLAFOND (coût médian) = part des fenêtres où le mouvement      |
-//|   |close(t+H) − close(t)| DÉPASSE le coût A/R médian.            |
-//| • PLAFOND (coût de la fenêtre) = le même compte, mais chaque     |
-//|   fenêtre jugée au spread RÉELLEMENT observé à son entrée.       |
-//|   L'ÉCART ENTRE LES DEUX CHIFFRE le biais du coût constant : le  |
-//|   spread de l'or explose quand le mouvement est grand — juger    |
-//|   une minute de news au péage d'une heure calme SURESTIME le     |
-//|   plafond (revue : la mesure par fenêtre était disponible dans   |
-//|   le même tableau, on ne la suppose plus).                       |
-//| • ★ ESPÉRANCE DE L'ORACLE = amplitude MOYENNE − coût. C'EST LE   |
-//|   JUGE DE RENTABILITÉ d'une direction parfaite : un oracle qui   |
-//|   trade chaque fenêtre gagne (|d| − coût) à chaque fois, donc il |
-//|   est rentable SSI moyenne(|d|) > coût. ⚠️ CE N'EST PAS le       |
-//|   PLAFOND : le plafond compte les fenêtres individuellement      |
-//|   gagnantes, et avec des queues épaisses (médiane ≪ moyenne) un  |
-//|   oracle peut être largement rentable avec moins de la moitié    |
-//|   des fenêtres au-dessus du péage (revue v1.01 : le verdict tiré |
-//|   du seul plafond était systématiquement PESSIMISTE — sur l'or,  |
-//|   c'est-à-dire précisément là où ce script sert).                |
-//| • SEUIL D'ÉQUILIBRE = 0,5 + coût / (2 × amplitude moyenne) : le  |
-//|   taux de bonne direction requis pour rentrer dans ses frais.    |
-//|   Il se compare à 100 % (le taux d'un oracle) : au-delà de       |
-//|   100 %, INATTEIGNABLE même parfait.                             |
-//| • MARGE = PLAFOND − SEUIL, publiée pour mémoire et      |
-//|   conservée telle quelle — ⚠️ MAIS c'est la DIFFÉRENCE DE DEUX   |
-//|   TAUX DE NATURES DIFFÉRENTES (une part de fenêtres moins un     |
-//|   taux de réussite requis) : elle se lit comme un indicateur,    |
-//|   JAMAIS comme le verdict de rentabilité. Le verdict, c'est      |
-//|   l'ESPÉRANCE ci-dessus.                                         |
-//| • Fenêtres retenues, équivalent NON CHEVAUCHANT (≈ used/H — les  |
-//|   fenêtres glissantes ne sont PAS des tirages indépendants), et  |
-//|   les fenêtres écartées.                                         |
+//| ── WHAT IT PUBLISHES, HORIZON BY HORIZON (H in MINUTES) ───────   |
+//| • CEILING (median cost) = share of windows where the move        |
+//|   |close(t+H) − close(t)| EXCEEDS the median round-trip cost.    |
+//| • CEILING (window cost) = the same count, but each window judged |
+//|   at the spread ACTUALLY observed at its entry.                  |
+//|   THE GAP BETWEEN THE TWO QUANTIFIES the bias of a constant      |
+//|   cost: the spread on gold explodes when the move is large —     |
+//|   judging a news minute at the toll of a quiet hour OVERSTATES   |
+//|   the ceiling (the per-window measurement was available in the   |
+//|   same table, so it is no longer assumed).                       |
+//| • ★ ORACLE EXPECTANCY = MEAN amplitude − cost. THIS IS THE       |
+//|   PROFITABILITY JUDGE for a perfect direction: an oracle that    |
+//|   trades every window earns (|d| − cost) each time, so it is     |
+//|   profitable IFF mean(|d|) > cost. ⚠️ THIS IS NOT the CEILING:   |
+//|   the ceiling counts individually winning windows, and with fat  |
+//|   tails (median ≪ mean) an oracle can be widely profitable with  |
+//|   fewer than half of the windows above the toll (v1.01 review:   |
+//|   a verdict drawn from the ceiling alone was systematically      |
+//|   PESSIMISTIC — on gold, that is, precisely where this script    |
+//|   is useful).                                                     |
+//| • BREAK-EVEN THRESHOLD = 0.5 + cost / (2 × mean amplitude): the  |
+//|   directional hit rate required to cover the cost.               |
+//|   It compares to 100 % (an oracle's rate): above 100 %,          |
+//|   UNREACHABLE even when perfect.                                 |
+//| • MARGIN = CEILING − THRESHOLD, published for the record and     |
+//|   kept as is — ⚠️ BUT it is the DIFFERENCE OF TWO RATES OF       |
+//|   DIFFERENT NATURES (a share of windows minus a required hit     |
+//|   rate): read it as an indicator, NEVER as the profitability     |
+//|   verdict. The verdict is the EXPECTANCY above.                  |
+//| • Windows kept, NON-OVERLAPPING equivalent (≈ used/H — rolling   |
+//|   windows are NOT independent draws), and the windows discarded. |
 //|                                                                  |
-//| ── LE COÛT ────────────────────────────────────────────────────  |
-//| Le SPREAD OBSERVÉ DANS L'HISTORIQUE (médiane de MqlRates.spread  |
-//| sur les barres lues), JAMAIS une constante ni le spread courant. |
-//| Distribution publiée (min/médiane/p90/max), part de la valeur    |
-//| MODALE, et médianes des deux MOITIÉS chronologiques : un spread  |
-//| fixe, ou un CHANGEMENT DE RÉGIME en cours d'historique, se       |
-//| voient — leçon v1.33, une porte spread lancée en spread fixe     |
-//| n'aurait rien testé et personne ne l'aurait vu. Les barres à     |
-//| spread 0 (historique importé, symbole custom) sont COMPTÉES et   |
-//| ÉCARTÉES du calcul de la médiane, en le disant.                  |
-//| ⚠️ MqlRates.spread est le spread ENREGISTRÉ par le terminal pour |
-//| la barre (son instant exact d'échantillonnage n'est pas          |
-//| documenté) : source dite ici, jamais supposée.          |
-//| ⚠️ COMMISSION et SLIPPAGE NON inclus — la première n'a jamais    |
-//| été mesurée sur ce compte, le second n'est pas mesurable depuis  |
-//| un historique de barres. Le coût publié est donc un PLANCHER, et |
-//| tout PLAFOND une borne haute OPTIMISTE.                          |
+//| ── THE COST ───────────────────────────────────────────────────  |
+//| The SPREAD OBSERVED IN THE HISTORY (median of MqlRates.spread    |
+//| over the bars read), NEVER a constant nor the current spread.    |
+//| The distribution is published (min/median/p90/max), the share of |
+//| the MODAL value, and the medians of the two chronological        |
+//| HALVES: a fixed spread, or a REGIME CHANGE inside the history,   |
+//| becomes visible — a spread-based rule run on a fixed spread      |
+//| would have tested nothing, and nobody would have noticed. Bars   |
+//| with a spread of 0 (imported history, custom symbol) are COUNTED |
+//| and EXCLUDED from the median, and that is said.                  |
+//| ⚠️ MqlRates.spread is the spread RECORDED by the terminal for    |
+//| the bar (its exact sampling instant is not documented): the      |
+//| source is stated here, never assumed.                            |
+//| ⚠️ COMMISSION and SLIPPAGE are NOT included — the first has      |
+//| never been measured on this account, the second is not           |
+//| measurable from bar history. The published cost is therefore a   |
+//| FLOOR, and any CEILING an OPTIMISTIC upper bound.                |
 //|                                                                  |
-//| ── LES FENÊTRES ÉCARTÉES ──────────────────────────────────────  |
-//| Une fenêtre n'est retenue QUE si (time[t+H] − time[t]) == H × 60 |
-//| exactement : cela écarte d'un coup les pauses ET les minutes     |
-//| manquantes (une fenêtre à barres absentes ne dure pas H minutes, |
-//| elle mesurerait autre chose). Les deux causes sont classées sur  |
-//| LE PLUS GRAND ÉCART entre deux barres consécutives DANS la       |
-//| fenêtre (et non sur l'excès cumulé — revue). ⚠️ Le script mesure |
-//| une DURÉE, il n'observe pas la CAUSE : un week-end et un trou de |
-//| données de 30 min sont indiscernables, les colonnes sont donc    |
-//| nommées « écart >= 30 min » / « écart < 30 min ».                |
-//| ⚠️ BIAIS ASSUMÉ ET PUBLIÉ : écarter les fenêtres à minute creuse |
-//| retire préférentiellement les plages CALMES => l'amplitude et le |
-//| plafond mesurés sont ceux du sous-ensemble le plus actif. Le     |
-//| TAUX DE RÉTENTION est publié par horizon pour le chiffrer.       |
+//| ── THE DISCARDED WINDOWS ──────────────────────────────────────  |
+//| A window is kept ONLY if (time[t+H] − time[t]) == H × 60         |
+//| exactly: that discards, in one test, both pauses AND missing     |
+//| minutes (a window with absent bars does not last H minutes, it   |
+//| would measure something else). The two causes are classified on  |
+//| THE LARGEST GAP between two consecutive bars INSIDE the window   |
+//| (and not on the cumulated excess). ⚠️ The script measures a      |
+//| DURATION, it does not observe the CAUSE: a weekend and a 30-min  |
+//| data hole are indistinguishable, so the columns are named        |
+//| "gap >= 30 min" / "gap < 30 min".                                |
+//| ⚠️ BIAS ASSUMED AND PUBLISHED: discarding windows with a missing |
+//| minute preferentially removes the QUIET stretches => the         |
+//| measured amplitude and ceiling are those of the most active      |
+//| subset. The RETENTION RATE is published per horizon so that the  |
+//| bias can be quantified.                                          |
 //|                                                                  |
-//| ── LES BORNES DE DATE (v1.02) ─────────────────────────────────  |
-//| MOTIF MESURÉ le 05/08/2026 : le premier run n'avait lu que       |
-//| 50 005 barres M1 (16/06 → 05/08/2026) — sept semaines, pas les   |
-//| fenêtres usuelles. Et même avec l'historique complet, une mesure  |
-//| unique sur 2024-2026 MOYENNERAIT DEUX RÉGIMES : entre le T1 2024 |
-//| et l'été 2026, l'amplitude médiane par minute est passée         |
-//| d'environ 24 à 74 points pendant que le prix doublait. Ce script   |
-//| sépare ses fenêtres depuis juin ; la sonde fait pareil.          |
+//| ── THE DATE BOUNDS (v1.02) ────────────────────────────────────  |
+//| MEASURED REASON: a first run had read only 50 005 M1 bars —      |
+//| seven weeks, not the intended window. And even with the full     |
+//| history, a single measurement over several years would AVERAGE   |
+//| TWO REGIMES: over roughly two years, the median amplitude per    |
+//| minute went from about 24 to 74 points while the price doubled.  |
+//| This script therefore separates its windows by period.           |
 //|                                                                  |
-//| SÉMANTIQUE : une fenêtre glissante n'est retenue que si SON      |
-//| OUVERTURE t tombe dans [HP_DateFrom, HP_DateTo].                 |
-//| ⚠️ LA FENÊTRE A LE DROIT DE SE TERMINER APRÈS HP_DateTo — et     |
-//| c'est VOULU : borner aussi la fin tronquerait les horizons longs |
-//| de façon INÉGALE (H=120 perdrait 2 h de plus que H=1) et les     |
-//| colonnes du tableau ne seraient plus comparables entre elles.    |
-//| Conséquence assumée : les dernières fenêtres d'une période       |
-//| lisent des barres postérieures à To. C'est dit ici ET dans la    |
-//| ligne de sortie.                                                 |
-//| LE COÛT EST RECALCULÉ SUR LA PÉRIODE (distribution, régime,      |
-//| barres à spread nul) — le spread de 2024 n'est pas celui de      |
-//| 2026, c'est tout l'objet de la version. Le compte de fenêtres et |
-//| le taux de rétention sont eux aussi relatifs à la période.       |
-//| Aux défauts (les deux dates à 1970), TOUT l'historique lu est    |
-//| retenu : le tableau est celui de la v1.01, bit à bit.            |
+//| SEMANTICS: a rolling window is kept only if ITS OPENING t falls  |
+//| inside [HP_DateFrom, HP_DateTo].                                 |
+//| ⚠️ THE WINDOW IS ALLOWED TO END AFTER HP_DateTo — and that is    |
+//| DELIBERATE: bounding the end as well would truncate long         |
+//| horizons UNEQUALLY (H=120 would lose 2 h more than H=1) and the  |
+//| table columns would no longer be comparable to each other.       |
+//| Assumed consequence: the last windows of a period read bars      |
+//| later than To. It is said here AND in the output line.           |
+//| THE COST IS RECOMPUTED OVER THE PERIOD (distribution, regime,    |
+//| zero-spread bars) — the spread of one year is not the spread of  |
+//| the next, and that is the whole point of this version. The       |
+//| window count and the retention rate are period-relative too.     |
+//| With the defaults (both dates at 1970), ALL the history read is  |
+//| kept: the table is the v1.01 one, bit for bit.                   |
 //|                                                                  |
-//| HORIZONS EN MINUTES => LA MESURE SE FAIT SUR M1, quelle que soit |
-//| la période du graphique (seul le SYMBOLE est repris).            |
-//| ⚠️ CE SCRIPT MESURE, IL N'OPTIMISE RIEN.                         |
+//| HORIZONS IN MINUTES => THE MEASUREMENT IS MADE ON M1, whatever   |
+//| the chart timeframe (only the SYMBOL is taken from the chart).   |
+//| ⚠️ THIS SCRIPT MEASURES, IT OPTIMISES NOTHING.                   |
 //+------------------------------------------------------------------+
 #property copyright "Javad Razavi — The Solution Maker"
+#property link      "https://javadrazavi.fr"
 #property version   "1.02"
+#property description "Measures, per horizon, the share of rolling windows whose move exceeds the"
+#property description "observed round-trip cost — no distribution assumption, no optimisation."
 #property script_show_inputs
 
-input double HP_Lots     = 0.01;                    // Taille de reference pour convertir les points en $. Convention d'affichage. N'influence AUCUN ratio — seulement l'affichage en $.
-input int    HP_MaxBars  = 500000;                  // Borne haute de l'historique M1 lu. Historique insuffisant = REFUS BAVARD, jamais une mesure silencieusement tronquee.
-input string HP_Horizons = "1,2,5,10,15,30,60,120"; // Horizons en MINUTES, separes par des VIRGULES, entiers uniquement. Tout jeton malforme ou double = REFUS BAVARD.
-input datetime HP_DateFrom = D'1970.01.01';         // Debut de la periode mesuree (1970 = TOUT l'historique lu, comportement v1.01 bit-a-bit). Une fenetre n'est retenue que si SON OUVERTURE tombe dans [From, To].
-input datetime HP_DateTo   = D'1970.01.01';         // Fin de la periode mesuree (1970 = TOUT l'historique lu). ⚠️ Borne l'OUVERTURE des fenetres, PAS leur fin : une fenetre a le droit de se terminer apres To (sinon H=120 perdrait 2 h de plus que H=1 et les colonnes ne seraient plus comparables).
+input double HP_Lots     = 0.01;                    // Reference size used to convert points into account currency. Display convention only. Affects NO ratio — only the money column.
+input int    HP_MaxBars  = 500000;                  // Upper bound on the M1 history read. Insufficient history = EXPLICIT REFUSAL, never a silently truncated measurement.
+input string HP_Horizons = "1,2,5,10,15,30,60,120"; // Horizons in MINUTES, separated by COMMAS, integers only. Any malformed or duplicate token = EXPLICIT REFUSAL.
+input datetime HP_DateFrom = D'1970.01.01';         // Start of the measured period (1970 = ALL the history read, bit-for-bit v1.01 behaviour). A window is kept only if ITS OPENING falls inside [From, To].
+input datetime HP_DateTo   = D'1970.01.01';         // End of the measured period (1970 = ALL the history read). ⚠️ It bounds the OPENING of the windows, NOT their end: a window may end after To (otherwise H=120 would lose 2 h more than H=1 and the columns would no longer be comparable).
 
-//--- Échantillon indépendant minimal sous lequel un horizon est déclaré NON
-//    CONCLUANT. ⚠️ Appliqué à l'équivalent NON CHEVAUCHANT
-//    (used/H), pas au compte brut : les fenêtres glissantes partagent H−1
-//    minutes sur H et ne sont pas des tirages indépendants (revue).
+//--- Minimum independent sample below which a horizon is declared NOT
+//    CONCLUSIVE. ⚠️ Applied to the NON-OVERLAPPING equivalent (used/H), not to
+//    the raw count: rolling windows share H−1 minutes out of H and are not
+//    independent draws.
 #define HP_MIN_WINDOWS   10000
-//--- Pause : convention : >= 30 min entre deux barres M1.
+//--- Pause convention: >= 30 min between two M1 bars.
 #define HP_PAUSE_SECONDS 1800
 #define HP_MAX_HORIZONS  32
-//--- Sous ce taux de rétention, le biais de sélection est nommé sur la ligne.
+//--- Below this retention rate, the selection bias is named on the line.
 #define HP_MIN_RETENTION 0.90
 
 //+------------------------------------------------------------------+
-//| Refus BAVARD — refus explicite, écrit ici pour que le script  |
-//| reste DÉTACHABLE (aucun include externe).                        |
+//| EXPLICIT REFUSAL — written here so that the script stays         |
+//| DETACHABLE (no external include).                                |
 //+------------------------------------------------------------------+
 void HP_Reject(const string param, const string value, const string expected, const string hint)
   {
-   PrintFormat("SB [HORIZON] ⛔ REFUS : %s = %s — attendu %s. %s", param, value, expected, hint);
+   PrintFormat("SB [HORIZON] ⛔ REFUSED : %s = %s — expected %s. %s", param, value, expected, hint);
   }
 
-//--- Quantile d'un tableau DÉJÀ TRIÉ (interpolation linéaire).
+//--- Quantile of an ALREADY SORTED array (linear interpolation).
 double HP_Quantile(const double &sorted[], const double q)
   {
    const int n = ArraySize(sorted);
@@ -156,14 +155,14 @@ double HP_Quantile(const double &sorted[], const double q)
    return sorted[lo] * (1.0 - f) + sorted[hi] * f;
   }
 
-//--- ArrayResize vérifié : un échec d'allocation doit produire un REFUS
-//    BAVARD, jamais un « array out of range » (revue).
+//--- Checked ArrayResize: an allocation failure must produce an EXPLICIT
+//    REFUSAL, never an "array out of range".
 bool HP_Resize(double &arr[], const int n, const string what)
   {
    if(ArrayResize(arr, n) == n)
       return true;
-   HP_Reject("HP_MaxBars", IntegerToString(n), "une taille de tableau tenant en memoire",
-             "Allocation refusee pour « " + what + " » — reduire HP_MaxBars.");
+   HP_Reject("HP_MaxBars", IntegerToString(n), "an array size that fits in memory",
+             "Allocation refused for \"" + what + "\" — lower HP_MaxBars.");
    return false;
   }
 
@@ -171,34 +170,34 @@ bool HP_Resize(double &arr[], const int n, const string what)
 void OnStart()
   {
    //================================================================
-   //  0. VALIDATION — refus bavards, jamais de silence.
+   //  0. VALIDATION — explicit refusals, never silence.
    //================================================================
    if(HP_Lots <= 0.0)
      {
       HP_Reject("HP_Lots", DoubleToString(HP_Lots, 2), "> 0",
-                "Taille de reference pour l'affichage en $ (aucun ratio n'en depend).");
+                "Reference size for the money column (no ratio depends on it).");
       return;
      }
    if(HP_MaxBars < 1000)
      {
       HP_Reject("HP_MaxBars", IntegerToString(HP_MaxBars), ">= 1000",
-                "Sous 1000 barres M1, aucun horizon ne peut rendre un echantillon lisible.");
+                "Below 1000 M1 bars, no horizon can return a readable sample.");
       return;
      }
    string parts[];
    const int nParts = StringSplit(HP_Horizons, ',', parts);
    if(nParts <= 0)
      {
-      HP_Reject("HP_Horizons", "\"" + HP_Horizons + "\"", "des entiers separes par des VIRGULES",
-                "Exemple : \"1,2,5,10,15,30,60,120\" (minutes). Un autre separateur (;, espace) n'est "
-                "PAS reconnu et rendrait un seul jeton.");
+      HP_Reject("HP_Horizons", "\"" + HP_Horizons + "\"", "integers separated by COMMAS",
+                "Example: \"1,2,5,10,15,30,60,120\" (minutes). Any other separator (;, space) is "
+                "NOT recognised and would return a single token.");
       return;
      }
    if(nParts > HP_MAX_HORIZONS)
      {
       HP_Reject("HP_Horizons", IntegerToString(nParts) + " horizons",
                 "<= " + IntegerToString(HP_MAX_HORIZONS),
-                "Borne dure du script — au-dela, la lecture du tableau n'a plus de sens.");
+                "Hard bound of the script — beyond it, reading the table stops making sense.");
       return;
      }
    int hor[HP_MAX_HORIZONS];
@@ -208,16 +207,16 @@ void OnStart()
       string t = parts[i];
       StringTrimLeft(t);
       StringTrimRight(t);
-      // VALIDATION STRICTE, caractère par caractère (revue) : StringToInteger
-      // suit la sémantique atol — « 5 min », « 1.5 », « 1;2;5 » rendaient des
-      // valeurs plausibles EN SILENCE, et un jeton vide était sauté sans rien
-      // dire. Un script de MESURE ne devine pas ce que l'utilisateur voulait.
+      // STRICT VALIDATION, character by character: StringToInteger follows the
+      // atol semantics — "5 min", "1.5", "1;2;5" returned plausible values IN
+      // SILENCE, and an empty token was skipped without a word. A MEASUREMENT
+      // script does not guess what the user meant.
       const int len = StringLen(t);
       if(len < 1 || len > 9)
         {
-         HP_Reject("HP_Horizons", "jeton n°" + IntegerToString(i + 1) + " = \"" + t + "\"",
-                   "1 a 9 chiffres",
-                   "Jeton vide ou trop long — verifier les virgules de la liste.");
+         HP_Reject("HP_Horizons", "token no." + IntegerToString(i + 1) + " = \"" + t + "\"",
+                   "1 to 9 digits",
+                   "Empty or overlong token — check the commas in the list.");
          return;
         }
       for(int c = 0; c < len; c++)
@@ -225,56 +224,56 @@ void OnStart()
          const ushort ch = StringGetCharacter(t, c);
          if(ch < '0' || ch > '9')
            {
-            HP_Reject("HP_Horizons", "jeton n°" + IntegerToString(i + 1) + " = \"" + t + "\"",
-                      "des CHIFFRES uniquement (minutes entieres)",
-                      "Ni decimale, ni unite, ni autre separateur : \"5 min\", \"1.5\" et \"1;2\" "
-                      "seraient interpretes a tort.");
+            HP_Reject("HP_Horizons", "token no." + IntegerToString(i + 1) + " = \"" + t + "\"",
+                      "DIGITS only (whole minutes)",
+                      "No decimal, no unit, no other separator: \"5 min\", \"1.5\" and \"1;2\" "
+                      "would be misread.");
             return;
            }
         }
       const int h = (int)StringToInteger(t);
       if(h <= 0)
         {
-         HP_Reject("HP_Horizons", "\"" + t + "\"", "entier > 0 (minutes)",
-                   "Un horizon nul n'a pas de sens.");
+         HP_Reject("HP_Horizons", "\"" + t + "\"", "integer > 0 (minutes)",
+                   "A zero horizon means nothing.");
          return;
         }
       for(int j = 0; j < nHor; j++)
          if(hor[j] == h)
            {
-            HP_Reject("HP_Horizons", "horizon " + IntegerToString(h) + " en DOUBLE",
-                      "des horizons distincts",
-                      "Une ligne repetee ne mesure rien de plus et fausse la lecture du tableau.");
+            HP_Reject("HP_Horizons", "horizon " + IntegerToString(h) + " DUPLICATED",
+                      "distinct horizons",
+                      "A repeated row measures nothing more and distorts the reading of the table.");
             return;
            }
       hor[nHor++] = h;
      }
    if(nHor == 0)
      {
-      HP_Reject("HP_Horizons", "\"" + HP_Horizons + "\"", "au moins un horizon valide",
-                "La liste ne contient aucun entier exploitable.");
+      HP_Reject("HP_Horizons", "\"" + HP_Horizons + "\"", "at least one valid horizon",
+                "The list contains no usable integer.");
       return;
      }
-   //--- v1.02 : les bornes de date. 0 (ou 1970) = borne absente.
+   //--- v1.02: the date bounds. 0 (or 1970) = no bound.
    if(HP_DateFrom > 0 && HP_DateTo > 0 && HP_DateFrom >= HP_DateTo)
      {
       HP_Reject("HP_DateFrom/HP_DateTo",
                 TimeToString(HP_DateFrom, TIME_DATE|TIME_MINUTES) + " / " +
                 TimeToString(HP_DateTo, TIME_DATE|TIME_MINUTES),
-                "HP_DateFrom STRICTEMENT anterieure a HP_DateTo",
-                "Une periode vide ou inversee ne mesurerait rien. Laisser les deux a 1970 pour "
-                "prendre TOUT l'historique lu.");
+                "HP_DateFrom STRICTLY earlier than HP_DateTo",
+                "An empty or reversed period would measure nothing. Leave both at 1970 to take "
+                "ALL the history read.");
       return;
      }
 
    //================================================================
-   //  1. L'INSTRUMENT. Le SYMBOLE vient du graphique ; la PÉRIODE est
-   //     ignorée : les horizons sont en MINUTES, donc mesure sur M1.
+   //  1. THE INSTRUMENT. The SYMBOL comes from the chart; the TIMEFRAME
+   //     is ignored: horizons are in MINUTES, so the measurement is on M1.
    //================================================================
    const string sym = _Symbol;
    if(_Period != PERIOD_M1)
-      PrintFormat("SB [HORIZON] ⚠️ graphique en %s : les horizons sont en MINUTES, la mesure se fait donc "
-                  "sur M1 — seul le SYMBOLE (%s) est repris du graphique.",
+      PrintFormat("SB [HORIZON] ⚠️ chart on %s: horizons are in MINUTES, so the measurement is made "
+                  "on M1 — only the SYMBOL (%s) is taken from the chart.",
                   EnumToString((ENUM_TIMEFRAMES)_Period), sym);
 
    const double tickValue = SymbolInfoDouble(sym, SYMBOL_TRADE_TICK_VALUE);
@@ -282,15 +281,15 @@ void OnStart()
    const double point     = SymbolInfoDouble(sym, SYMBOL_POINT);
    if(tickValue <= 0.0 || tickSize <= 0.0 || point <= 0.0)
      {
-      PrintFormat("SB [HORIZON] ⛔ fiche symbole INEXPLOITABLE (%s) : tick_value %.5f, tick_size %.5f, "
-                  "point %.5f — impossible de convertir des points en $. Mesure abandonnee.",
+      PrintFormat("SB [HORIZON] ⛔ UNUSABLE symbol specification (%s): tick_value %.5f, tick_size %.5f, "
+                  "point %.5f — points cannot be converted into money. Measurement abandoned.",
                   sym, tickValue, tickSize, point);
       return;
      }
    const double valuePerPoint = tickValue * (point / tickSize) * HP_Lots;
 
    //================================================================
-   //  2. L'HISTORIQUE M1.
+   //  2. THE M1 HISTORY.
    //================================================================
    const int available = Bars(sym, PERIOD_M1);
    int want = (int)MathMin((double)HP_MaxBars, (double)available);
@@ -300,42 +299,41 @@ void OnStart()
          hMax = hor[i];
    if(want < hMax + 100)
      {
-      PrintFormat("SB [HORIZON] ⛔ HISTORIQUE INSUFFISANT : %d barre(s) M1 disponible(s) sur %s (borne "
-                  "HP_MaxBars %d), il en faut au moins %d pour l'horizon le plus long (%d min). "
-                  "Charger l'historique M1 (graphique %s en M1, defiler vers le passe) puis relancer. "
-                  "Le telechargement est ASYNCHRONE : un second lancement peut suffire. JAMAIS une "
-                  "mesure silencieusement tronquee.",
+      PrintFormat("SB [HORIZON] ⛔ INSUFFICIENT HISTORY: %d M1 bar(s) available on %s (HP_MaxBars "
+                  "bound %d), at least %d are needed for the longest horizon (%d min). "
+                  "Load the M1 history (%s chart on M1, scroll into the past) then run again. "
+                  "The download is ASYNCHRONOUS: a second run may be enough. NEVER a "
+                  "silently truncated measurement.",
                   available, sym, HP_MaxBars, hMax + 100, hMax, sym);
       return;
      }
 
    MqlRates rates[];
-   ArraySetAsSeries(rates, false);        // index 0 = le PLUS ANCIEN (explicite, jamais supposé)
-   // ⚠️ LECTURE DEPUIS LA POSITION 1 (revue) : la barre 0 est EN FORMATION —
-   // son close bouge, son spread aussi. L'inclure rendait la dernière fenêtre,
-   // la plage de dates ET la distribution de spread instables d'un lancement
-   // à l'autre.
+   ArraySetAsSeries(rates, false);        // index 0 = the OLDEST (explicit, never assumed)
+   // ⚠️ READ FROM POSITION 1: bar 0 is STILL FORMING — its close moves, and so
+   // does its spread. Including it made the last window, the date range AND the
+   // spread distribution unstable from one run to the next.
    const int got = CopyRates(sym, PERIOD_M1, 1, want, rates);
    if(got <= 0)
      {
-      PrintFormat("SB [HORIZON] ⛔ CopyRates a rendu %d pour %d barre(s) M1 demandee(s) sur %s "
-                  "(erreur %d) — mesure abandonnee. Le telechargement M1 est asynchrone : relancer.",
+      PrintFormat("SB [HORIZON] ⛔ CopyRates returned %d for %d M1 bar(s) requested on %s "
+                  "(error %d) — measurement abandoned. The M1 download is asynchronous: run again.",
                   got, want, sym, GetLastError());
       return;
      }
    if(got < hMax + 100)
      {
-      PrintFormat("SB [HORIZON] ⛔ CopyRates n'a servi que %d barre(s) sur %d demandee(s) — moins que les "
-                  "%d requises pour l'horizon le plus long (%d min). Le telechargement M1 est ASYNCHRONE : "
-                  "relancer apres chargement. Mesure abandonnee (jamais tronquee en silence).",
+      PrintFormat("SB [HORIZON] ⛔ CopyRates served only %d bar(s) out of %d requested — fewer than the "
+                  "%d required for the longest horizon (%d min). The M1 download is ASYNCHRONOUS: "
+                  "run again once it has loaded. Measurement abandoned (never silently truncated).",
                   got, want, hMax + 100, hMax);
       return;
      }
    if(got < want)
-      PrintFormat("SB [HORIZON] ⚠️ %d barre(s) M1 obtenue(s) sur %d demandee(s) : le terminal borne "
-                  "l'historique servi. La mesure porte sur ce qui a ETE lu.", got, want);
+      PrintFormat("SB [HORIZON] ⚠️ %d M1 bar(s) obtained out of %d requested: the terminal caps the "
+                  "history it serves. The measurement covers WHAT WAS READ.", got, want);
 
-   PrintFormat("═══ SB HORIZON PROBE v1.02 — %s, %d barre(s) M1 du %s au %s (barre en formation EXCLUE) ═══",
+   PrintFormat("═══ HORIZON PROBE v1.02 — %s, %d M1 bar(s) from %s to %s (forming bar EXCLUDED) ═══",
                sym, got,
                TimeToString(rates[0].time, TIME_DATE|TIME_MINUTES),
                TimeToString(rates[got - 1].time, TIME_DATE|TIME_MINUTES));
@@ -347,14 +345,14 @@ void OnStart()
       if(hor[i] < hMin)
          hMin = hor[i];
      }
-   PrintFormat("Horizons RETENUS (%d, en minutes) : %s — liste republiee pour verification a l'oeil.",
+   PrintFormat("Horizons KEPT (%d, in minutes): %s — the list is republished so it can be checked by eye.",
                nHor, horList);
 
    //================================================================
-   //  2 bis. LA PÉRIODE MESURÉE (v1.02) — bornes sur l'OUVERTURE des
-   //     fenêtres. Aux défauts (1970/1970) : iFrom = 0, iTo = got-1,
-   //     donc TOUT l'historique lu, et le tableau est celui de la
-   //     v1.01 bit à bit (les bornes de boucle coïncident).
+   //  2 bis. THE MEASURED PERIOD (v1.02) — bounds on the OPENING of the
+   //     windows. With the defaults (1970/1970): iFrom = 0, iTo = got-1,
+   //     so ALL the history read, and the table is the v1.01 one bit for
+   //     bit (the loop bounds coincide).
    //================================================================
    int iFrom = 0, iTo = got - 1;
    if(HP_DateFrom > 0)
@@ -365,25 +363,24 @@ void OnStart()
          iTo--;
    if(iFrom > iTo)
      {
-      PrintFormat("SB [HORIZON] ⛔ AUCUNE barre M1 dans la periode demandee [%s ; %s] : l'historique lu "
-                  "va du %s au %s. Aucune fenetre ne peut s'ouvrir dans cet intervalle — jamais un "
-                  "tableau vide en silence. Mesure abandonnee.",
-                  (HP_DateFrom > 0 ? TimeToString(HP_DateFrom, TIME_DATE|TIME_MINUTES) : "debut"),
-                  (HP_DateTo   > 0 ? TimeToString(HP_DateTo,   TIME_DATE|TIME_MINUTES) : "fin"),
+      PrintFormat("SB [HORIZON] ⛔ NO M1 bar inside the requested period [%s ; %s]: the history read "
+                  "runs from %s to %s. No window can open in that interval — never an empty "
+                  "table in silence. Measurement abandoned.",
+                  (HP_DateFrom > 0 ? TimeToString(HP_DateFrom, TIME_DATE|TIME_MINUTES) : "start"),
+                  (HP_DateTo   > 0 ? TimeToString(HP_DateTo,   TIME_DATE|TIME_MINUTES) : "end"),
                   TimeToString(rates[0].time, TIME_DATE|TIME_MINUTES),
                   TimeToString(rates[got - 1].time, TIME_DATE|TIME_MINUTES));
       return;
      }
-   //--- Au moins UNE fenêtre doit pouvoir s'ouvrir, pour le plus COURT
-   //    horizon : sinon le tableau serait vide ligne après ligne. (iFrom <=
-   //    iTo est DÉJÀ garanti par le refus ci-dessus : la seule impossibilité
-   //    restante est le manque de barres APRÈS l'ouverture — la seconde
-   //    condition d'origine en était l'exact doublon, retirée en revue.)
+   //--- At least ONE window must be able to open, for the SHORTEST horizon:
+   //    otherwise the table would be empty row after row. (iFrom <= iTo is
+   //    ALREADY guaranteed by the refusal above: the only remaining
+   //    impossibility is the lack of bars AFTER the opening.)
    if(iFrom + hMin >= got)
      {
-      PrintFormat("SB [HORIZON] ⛔ AUCUNE fenetre exploitable dans la periode demandee : %d barre(s) "
-                  "retenue(s) [%s ; %s], et il faut au moins %d barre(s) apres l'ouverture pour le plus "
-                  "court horizon (%d min) — l'historique s'arrete le %s. Mesure abandonnee.",
+      PrintFormat("SB [HORIZON] ⛔ NO usable window inside the requested period: %d bar(s) "
+                  "kept [%s ; %s], and at least %d bar(s) are needed after the opening for the "
+                  "shortest horizon (%d min) — the history ends on %s. Measurement abandoned.",
                   iTo - iFrom + 1,
                   TimeToString(rates[iFrom].time, TIME_DATE|TIME_MINUTES),
                   TimeToString(rates[iTo].time, TIME_DATE|TIME_MINUTES),
@@ -392,73 +389,75 @@ void OnStart()
      }
    const bool ranged = (HP_DateFrom > 0 || HP_DateTo > 0);
    if(ranged)
-      PrintFormat("⚠️ REFERENTIEL HORAIRE : les bornes de date sont comparees a l'heure du SERVEUR "
-                  "(%s, decalage actuel GMT%+d) — la MEME date saisie sur un autre courtier ne designe "
-                  "PAS le meme instant. C'est le referentiel de rates[].time, celui de tout le script.",
+      PrintFormat("⚠️ TIME REFERENCE: the date bounds are compared to the SERVER clock "
+                  "(%s, current offset GMT%+d) — the SAME date entered on another broker does "
+                  "NOT designate the same instant. This is the reference of rates[].time, and of the "
+                  "whole script.",
                   AccountInfoString(ACCOUNT_SERVER),
                   (int)((TimeTradeServer() - TimeGMT()) / 3600));
    if(!ranged)
-      PrintFormat("PERIODE MESUREE : TOUT l'historique lu (bornes de date au defaut) — du %s au %s, "
-                  "%d barre(s).",
+      PrintFormat("MEASURED PERIOD: ALL the history read (date bounds at their default) — from %s to %s, "
+                  "%d bar(s).",
                   TimeToString(rates[0].time, TIME_DATE|TIME_MINUTES),
                   TimeToString(rates[got - 1].time, TIME_DATE|TIME_MINUTES), got);
    else
      {
-      PrintFormat("PERIODE MESUREE — DEMANDEE : [%s ; %s] | REELLEMENT OBTENUE : [%s ; %s], %d barre(s) "
-                  "d'ouverture retenues sur %d lues. ⚠️ Ces bornes portent sur l'OUVERTURE des fenetres : "
-                  "une fenetre a le droit de SE TERMINER apres la borne de fin (sinon H=%d perdrait "
-                  "%d min de plus que H=%d et les colonnes ne seraient plus comparables).",
-                  (HP_DateFrom > 0 ? TimeToString(HP_DateFrom, TIME_DATE|TIME_MINUTES) : "debut de l'historique"),
-                  (HP_DateTo   > 0 ? TimeToString(HP_DateTo,   TIME_DATE|TIME_MINUTES) : "fin de l'historique"),
+      PrintFormat("MEASURED PERIOD — REQUESTED: [%s ; %s] | ACTUALLY OBTAINED: [%s ; %s], %d opening "
+                  "bar(s) kept out of %d read. ⚠️ These bounds apply to the OPENING of the windows: "
+                  "a window is allowed to END after the end bound (otherwise H=%d would lose "
+                  "%d min more than H=%d and the columns would no longer be comparable).",
+                  (HP_DateFrom > 0 ? TimeToString(HP_DateFrom, TIME_DATE|TIME_MINUTES) : "start of history"),
+                  (HP_DateTo   > 0 ? TimeToString(HP_DateTo,   TIME_DATE|TIME_MINUTES) : "end of history"),
                   TimeToString(rates[iFrom].time, TIME_DATE|TIME_MINUTES),
                   TimeToString(rates[iTo].time,   TIME_DATE|TIME_MINUTES),
                   iTo - iFrom + 1, got, hMax, hMax - hMin, hMin);
-      //--- ⚠️ LA DEMANDE N'EST PAS COUVERTE : ça CRIE, ça ne se tronque
-      //    pas en silence (le motif même de cette version : un premier run
-      //    avait mesuré sept semaines en croyant mesurer deux ans).
+      //--- ⚠️ THE REQUEST IS NOT COVERED: it SHOUTS, it does not truncate in
+      //    silence (the very reason for this version: a first run measured
+      //    seven weeks while believing it measured two years).
       if(HP_DateFrom > 0 && HP_DateFrom < rates[0].time)
         {
-         // ⚠️ MINUTES DE CALENDRIER, pas barres : le marché ne cote pas en
-         // continu, donc c'est une BORNE HAUTE du nombre de barres absentes
-         // (« au minimum » disait l'inverse — revue). L'estimation par la
-         // densité RÉELLEMENT observée est publiée à côté.
+         // ⚠️ CALENDAR MINUTES, not bars: the market does not quote
+         // continuously, so this is an UPPER BOUND on the number of missing
+         // bars. The estimate from the ACTUALLY observed density is published
+         // next to it.
          const long missMin = (long)(rates[0].time - HP_DateFrom) / 60;
          const long span    = (long)(rates[got - 1].time - rates[0].time);
-         const double dens  = (span > 0 ? (double)got / (span / 60.0) : 0.0);   // barres par minute calendaire
-         PrintFormat("⛔ DEBUT NON COUVERT : la periode demandee commence le %s, mais l'historique LU "
-                     "ne remonte qu'au %s — %d minute(s) de CALENDRIER d'ecart (BORNE HAUTE du nombre "
-                     "de barres M1 absentes : les week-ends n'en portent aucune ; a la densite observee "
-                     "de %.2f barre/min, l'ordre de grandeur est ~%d barres). La mesure porte sur une "
-                     "periode PLUS COURTE que celle demandee — augmenter HP_MaxBars et/ou charger "
-                     "l'historique M1 (graphique en M1, defiler vers le passe).",
+         const double dens  = (span > 0 ? (double)got / (span / 60.0) : 0.0);   // bars per calendar minute
+         PrintFormat("⛔ START NOT COVERED: the requested period begins on %s, but the history READ "
+                     "only goes back to %s — %d CALENDAR minute(s) of difference (UPPER BOUND on the "
+                     "number of missing M1 bars: weekends carry none; at the observed density "
+                     "of %.2f bar/min, the order of magnitude is ~%d bars). The measurement covers a "
+                     "SHORTER period than the one requested — raise HP_MaxBars and/or load the "
+                     "M1 history (chart on M1, scroll into the past).",
                      TimeToString(HP_DateFrom, TIME_DATE|TIME_MINUTES),
                      TimeToString(rates[0].time, TIME_DATE|TIME_MINUTES),
                      (int)missMin, dens, (int)(missMin * dens));
         }
       if(HP_DateTo > 0 && HP_DateTo > rates[got - 1].time)
-         PrintFormat("⛔ FIN NON COUVERTE : la periode demandee va jusqu'au %s, mais l'historique LU "
-                     "s'arrete au %s. La mesure porte sur une periode PLUS COURTE que celle demandee.",
+         PrintFormat("⛔ END NOT COVERED: the requested period runs until %s, but the history READ "
+                     "stops on %s. The measurement covers a SHORTER period than the one requested.",
                      TimeToString(HP_DateTo, TIME_DATE|TIME_MINUTES),
                      TimeToString(rates[got - 1].time, TIME_DATE|TIME_MINUTES));
      }
-   PrintFormat("Conversion : %.2f lot, tick_value %.5f / tick_size %.5f / point %.5f => %.5f $ par point. "
-               "⚠️ Valeur du tick lue MAINTENANT (devise du compte %s) et appliquee a tout l'historique : "
-               "la colonne $ est une valorisation ACTUELLE d'amplitudes passees. Les RATIOS sont en POINTS "
-               "et n'en dependent PAS.",
+   PrintFormat("Conversion: %.2f lot, tick_value %.5f / tick_size %.5f / point %.5f => %.5f per point. "
+               "⚠️ Tick value read NOW (account currency %s) and applied to the whole history: "
+               "the money column is a CURRENT valuation of past amplitudes. The RATIOS are in POINTS "
+               "and do NOT depend on it.",
                HP_Lots, tickValue, tickSize, point, valuePerPoint,
                AccountInfoString(ACCOUNT_CURRENCY));
 
    //================================================================
-   //  3. LE COÛT — le SPREAD OBSERVÉ. Barres à spread 0 comptées et
-   //     écartées ; régime détecté (valeur modale, moitiés).
+   //  3. THE COST — the OBSERVED SPREAD. Zero-spread bars counted and
+   //     excluded; regime detected (modal value, halves).
    //================================================================
-   //--- v1.02 : la distribution est calculée SUR LA PÉRIODE RETENUE (iFrom..iTo)
-   //    et non sur tout l'historique — le spread de 2024 n'est pas celui de
-   //    2026, c'est l'objet même de la version. Aux défauts, iFrom = 0 et
-   //    iTo = got-1 : les bornes coïncident avec la v1.01, bit à bit.
+   //--- v1.02: the distribution is computed OVER THE KEPT PERIOD (iFrom..iTo)
+   //    and not over the whole history — the spread of one year is not the
+   //    spread of the next, which is the very point of this version. With the
+   //    defaults, iFrom = 0 and iTo = got-1: the bounds coincide with v1.01,
+   //    bit for bit.
    const int nRange = iTo - iFrom + 1;
    double sp[];
-   if(!HP_Resize(sp, nRange, "distribution du spread"))
+   if(!HP_Resize(sp, nRange, "spread distribution"))
       return;
    int nZero = 0, nSp = 0;
    for(int i = iFrom; i <= iTo; i++)
@@ -466,62 +465,61 @@ void OnStart()
       if(rates[i].spread <= 0)
         {
          nZero++;
-         continue;                        // écarté de la médiane, compté et DIT
+         continue;                        // excluded from the median, counted and SAID
         }
       sp[nSp++] = (double)rates[i].spread;
      }
    if(nSp == 0)
      {
-      PrintFormat("SB [HORIZON] ⛔ AUCUNE barre ne porte de spread sur la periode mesuree (%d barres a "
-                  "spread 0) : pas de cout observable — tout mouvement « depasserait » un cout de zero et "
-                  "le tableau ne voudrait RIEN dire (symbole custom, ticks importes, testeur mal "
-                  "configure). Mesure abandonnee.", nRange);
+      PrintFormat("SB [HORIZON] ⛔ NO bar carries a spread over the measured period (%d bars at "
+                  "spread 0): no observable cost — every move would \"exceed\" a cost of zero and "
+                  "the table would mean NOTHING (custom symbol, imported ticks, badly configured "
+                  "tester). Measurement abandoned.", nRange);
       return;
      }
-   if(!HP_Resize(sp, nSp, "distribution du spread (compactee)"))
+   if(!HP_Resize(sp, nSp, "spread distribution (compacted)"))
       return;
    ArraySort(sp);
    const double spMin = sp[0];
    const double spMed = HP_Quantile(sp, 0.50);
    const double spP90 = HP_Quantile(sp, 0.90);
    const double spMax = sp[nSp - 1];
-   //--- LE COÛT A/R : traverser le spread une fois EST le coût complet d'un
-   //    aller-retour au même prix. ARRONDI à l'entier de points (les prix sont
-   //    sur la grille du point : un coût interpolé à 24,5 comparerait des
-   //    entiers à une demi-unité, et la valeur publiée ne serait pas celle
-   //    utilisée — revue). L'arrondi est DIT.
+   //--- THE ROUND-TRIP COST: crossing the spread once IS the full cost of a
+   //    round trip at the same price. ROUNDED to whole points (prices sit on
+   //    the point grid: a cost interpolated at 24.5 would compare integers to a
+   //    half-unit, and the published value would not be the one used). The
+   //    rounding is SAID.
    const double costPts = MathRound(spMed);
 
-   //--- ⛔ TEST DU COÛT NUL : INDÉPENDANT et EN PREMIER (revue, HIGH — il
-   //    était en `else if` derrière le test de spread constant, donc
-   //    INATTEIGNABLE dans le cas le plus fréquent : un historique
-   //    entièrement à spread 0 imprimait « spread constant » et publiait
-   //    quand même un tableau à coût nul, PLAFOND ~99 % partout).
+   //--- ⛔ ZERO-COST TEST: INDEPENDENT and FIRST (it used to sit in an `else if`
+   //    behind the constant-spread test, hence UNREACHABLE in the most frequent
+   //    case: a history entirely at spread 0 printed "constant spread" and still
+   //    published a zero-cost table, CEILING ~99 % everywhere).
    if(costPts <= 0.0)
      {
-      PrintFormat("SB [HORIZON] ⛔ COUT MEDIAN NUL (mediane %.2f pt sur %d barre(s) a spread renseigne) : "
-                  "aucun peage a franchir, le tableau ne voudrait RIEN dire. Mesure abandonnee.",
+      PrintFormat("SB [HORIZON] ⛔ MEDIAN COST IS ZERO (median %.2f pt over %d bar(s) with a spread): "
+                  "there is no toll to cross, the table would mean NOTHING. Measurement abandoned.",
                   spMed, nSp);
       return;
      }
 
-   PrintFormat("COUT A/R MESURE : spread MEDIAN observe %.2f pts (arrondi a %.0f pts pour la mesure) = "
-               "%.2f $ pour %.2f lot. ⚠️ COMMISSION et SLIPPAGE NON inclus (la 1re jamais mesuree sur ce "
-               "compte, le 2d non mesurable depuis des barres) : ce cout est un PLANCHER, et tout PLAFOND "
-               "une borne haute OPTIMISTE.",
+   PrintFormat("MEASURED ROUND-TRIP COST: MEDIAN observed spread %.2f pts (rounded to %.0f pts for the "
+               "measurement) = %.2f for %.2f lot. ⚠️ COMMISSION and SLIPPAGE NOT included (the first "
+               "never measured on this account, the second not measurable from bars): this cost is a "
+               "FLOOR, and any CEILING an OPTIMISTIC upper bound.",
                spMed, costPts, costPts * valuePerPoint, HP_Lots);
-   PrintFormat("Distribution du spread : min %.2f / mediane %.2f / p90 %.2f / max %.2f pts "
-               "(en $ pour %.2f lot : %.2f / %.2f / %.2f / %.2f).",
+   PrintFormat("Spread distribution: min %.2f / median %.2f / p90 %.2f / max %.2f pts "
+               "(in account currency for %.2f lot: %.2f / %.2f / %.2f / %.2f).",
                spMin, spMed, spP90, spMax, HP_Lots,
                spMin * valuePerPoint, spMed * valuePerPoint,
                spP90 * valuePerPoint, spMax * valuePerPoint);
    if(nZero > 0)
-      PrintFormat("⚠️ %d barre(s) sur %d (%.1f%%) portent un spread NUL : ECARTEES du calcul de la mediane "
-                  "(calculee sur %d barre(s) a spread renseigne). Un historique MIXTE signale une source "
-                  "partiellement importee — la mediane ne decrit alors que la partie renseignee.",
+      PrintFormat("⚠️ %d bar(s) out of %d (%.1f%%) carry a ZERO spread: EXCLUDED from the median "
+                  "(computed over %d bar(s) that do carry one). A MIXED history signals a partially "
+                  "imported source — the median then describes only the priced part.",
                   nZero, nRange, 100.0 * nZero / nRange, nSp);
-   //--- Régime : valeur MODALE et moitiés chronologiques (revue — min==max ne
-   //    voyait pas un changement de régime en cours d'historique).
+   //--- Regime: MODAL value and chronological halves (min==max alone did not
+   //    see a regime change happening inside the history).
    int modeCount = 1, bestCount = 1;
    double modeVal = sp[0];
    for(int i = 1; i < nSp; i++)
@@ -532,12 +530,12 @@ void OnStart()
      }
    const double modeShare = (double)bestCount / nSp;
    double h1[], h2[];
-   //--- Moitiés CHRONOLOGIQUES de la période retenue (v1.02). Aux défauts,
-   //    mid = 0 + got/2 : le découpage de la v1.01, à l'identique.
+   //--- CHRONOLOGICAL halves of the kept period (v1.02). With the defaults,
+   //    mid = 0 + got/2: the v1.01 split, identically.
    const int mid = iFrom + nRange / 2;
    int n1 = 0, n2 = 0;
-   if(!HP_Resize(h1, nRange / 2 + 1, "spread 1re moitie") ||
-      !HP_Resize(h2, nRange - nRange / 2 + 1, "spread 2de moitie"))
+   if(!HP_Resize(h1, nRange / 2 + 1, "spread, 1st half") ||
+      !HP_Resize(h2, nRange - nRange / 2 + 1, "spread, 2nd half"))
       return;
    for(int i = iFrom; i <= iTo; i++)
      {
@@ -547,58 +545,58 @@ void OnStart()
       else        h2[n2++] = (double)rates[i].spread;
      }
    double med1 = 0.0, med2 = 0.0;
-   if(n1 > 0) { HP_Resize(h1, n1, "spread 1re moitie"); ArraySort(h1); med1 = HP_Quantile(h1, 0.50); }
-   if(n2 > 0) { HP_Resize(h2, n2, "spread 2de moitie"); ArraySort(h2); med2 = HP_Quantile(h2, 0.50); }
-   // « n/a » explicite quand une moitié ne porte AUCUNE barre tarifée : 0,00
-   // se lirait comme un spread MESURÉ à zéro — la valeur la plus optimiste
-   // possible, à la place d'une valeur non définie (revue).
-   const string med1Txt = (n1 > 0 ? StringFormat("%.2f", med1) : "n/a (0 barre a spread renseigne)");
-   const string med2Txt = (n2 > 0 ? StringFormat("%.2f", med2) : "n/a (0 barre a spread renseigne)");
-   PrintFormat("Regime du spread : valeur MODALE %.0f pts sur %.1f%% des barres ; mediane 1re moitie "
-               "%s / 2de moitie %s pts.", modeVal, 100.0 * modeShare, med1Txt, med2Txt);
+   if(n1 > 0) { HP_Resize(h1, n1, "spread, 1st half"); ArraySort(h1); med1 = HP_Quantile(h1, 0.50); }
+   if(n2 > 0) { HP_Resize(h2, n2, "spread, 2nd half"); ArraySort(h2); med2 = HP_Quantile(h2, 0.50); }
+   // An explicit "n/a" when a half carries NO priced bar at all: 0.00 would read
+   // as a spread MEASURED at zero — the most optimistic value possible — instead
+   // of an undefined one.
+   const string med1Txt = (n1 > 0 ? StringFormat("%.2f", med1) : "n/a (0 bar with a spread)");
+   const string med2Txt = (n2 > 0 ? StringFormat("%.2f", med2) : "n/a (0 bar with a spread)");
+   PrintFormat("Spread regime: MODAL value %.0f pts on %.1f%% of the bars; median of 1st half "
+               "%s / 2nd half %s pts.", modeVal, 100.0 * modeShare, med1Txt, med2Txt);
    bool costSuspect = false;
-   // SOURCE MIXTE : une moitié entièrement non tarifée. Sans ce cas, l'alarme
-   // « changement de régime » (qui exige med1 > 0 ET med2 > 0) était DÉSARMÉE
-   // par la source mixte elle-même — précisément ce qu'elle devait attraper.
+   // MIXED SOURCE: one half entirely unpriced. Without this case, the
+   // "regime change" alarm (which requires med1 > 0 AND med2 > 0) was DISARMED
+   // by the mixed source itself — precisely what it was meant to catch.
    if((n1 == 0) != (n2 == 0))
      {
       costSuspect = true;
-      Print("⛔ SOURCE MIXTE : une moitie de la periode ne porte AUCUN spread renseigne (import a "
-            "spread 0 d'un cote, live de l'autre) — le cout median ne decrit QUE l'autre moitie.");
+      Print("⛔ MIXED SOURCE: one half of the period carries NO spread at all (import at "
+            "spread 0 on one side, live on the other) — the median cost describes ONLY the other half.");
      }
    if(spMin == spMax)
      {
       costSuspect = true;
-      PrintFormat("⛔ SPREAD CONSTANT (%.0f pts sur les %d barres renseignees) : source en SPREAD FIXE. "
-                  "Le cout de cette mesure est une CONSTANTE ARBITRAIRE, pas un cout observe.", spMin, nSp);
+      PrintFormat("⛔ CONSTANT SPREAD (%.0f pts over the %d priced bars): source in FIXED SPREAD. "
+                  "The cost of this measurement is an ARBITRARY CONSTANT, not an observed cost.", spMin, nSp);
      }
    else if(modeShare > 0.90)
      {
       costSuspect = true;
-      PrintFormat("⛔ SPREAD QUASI FIXE : %.1f%% des barres portent la meme valeur (%.0f pts). Le cout est "
-                  "quasi une constante — meme reserve qu'un spread fixe.", 100.0 * modeShare, modeVal);
+      PrintFormat("⛔ NEARLY FIXED SPREAD: %.1f%% of the bars carry the same value (%.0f pts). The cost is "
+                  "close to a constant — same reservation as a fixed spread.", 100.0 * modeShare, modeVal);
      }
    if(n1 > 0 && n2 > 0 && med1 > 0.0 && med2 > 0.0 &&
       (med2 / med1 > 2.0 || med1 / med2 > 2.0))
      {
       costSuspect = true;
-      PrintFormat("⛔ CHANGEMENT DE REGIME : la mediane du spread passe de %.2f a %.2f pts entre les deux "
-                  "moities de l'historique (facteur %.1f). Un cout MEDIAN GLOBAL ne decrit alors ni l'une "
-                  "ni l'autre periode.", med1, med2, MathMax(med2 / med1, med1 / med2));
+      PrintFormat("⛔ REGIME CHANGE: the median spread goes from %.2f to %.2f pts between the two "
+                  "halves of the history (factor %.1f). A GLOBAL MEDIAN cost then describes neither "
+                  "period.", med1, med2, MathMax(med2 / med1, med1 / med2));
      }
 
    //================================================================
-   //  4. PRÉ-CALCUL DES PAUSES — index de la dernière barre précédée
-   //     d'un écart >= 30 min, en O(n) : sert à classer une exclusion
-   //     sur LE PLUS GRAND ÉCART de la fenêtre et non sur l'excès
-   //     cumulé (revue : aux longs horizons, 30 minutes manquantes
-   //     éparpillées étaient étiquetées « pause »).
+   //  4. PRE-COMPUTING THE PAUSES — index of the last bar preceded by
+   //     a gap >= 30 min, in O(n): used to classify an exclusion on
+   //     THE LARGEST GAP of the window and not on the cumulated
+   //     excess (at long horizons, 30 scattered missing minutes were
+   //     labelled "pause").
    //================================================================
    int lastPause[];
    if(ArrayResize(lastPause, got) != got)
      {
-      HP_Reject("HP_MaxBars", IntegerToString(got), "une taille tenant en memoire",
-                "Allocation refusee pour l'index des pauses — reduire HP_MaxBars.");
+      HP_Reject("HP_MaxBars", IntegerToString(got), "a size that fits in memory",
+                "Allocation refused for the pause index — lower HP_MaxBars.");
       return;
      }
    lastPause[0] = -1;
@@ -607,27 +605,27 @@ void OnStart()
                         ? i : lastPause[i - 1]);
 
    //================================================================
-   //  5. LE TABLEAU.
+   //  5. THE TABLE.
    //================================================================
-   // Titre et pied de tableau CONDITIONNELS : en mode borné, « toutes les
-   // fenetres de l'historique lu » serait FAUX (revue).
+   // Title and footer are CONDITIONAL: in bounded mode, "every window of the
+   // history read" would be FALSE.
    if(ranged)
-      PrintFormat("─── PLAFOND DE L'ORACLE, PAR HORIZON (fenetres OUVRANT dans [%s ; %s]) ───",
+      PrintFormat("─── ORACLE CEILING, PER HORIZON (windows OPENING inside [%s ; %s]) ───",
                   TimeToString(rates[iFrom].time, TIME_DATE|TIME_MINUTES),
                   TimeToString(rates[iTo].time,   TIME_DATE|TIME_MINUTES));
    else
-      Print("─── PLAFOND DE L'ORACLE, PAR HORIZON (toutes fenetres glissantes) ───");
-   Print("★ LE JUGE DE RENTABILITE EST L'ESPERANCE (ampl. MOYENNE - cout) : un oracle a direction "
-         "PARFAITE gagne (|d| - cout) sur chaque fenetre, il est donc rentable SSI moyenne(|d|) > cout. "
-         "Le PLAFOND (part des fenetres ou |d| > cout) mesure autre chose : avec des queues epaisses "
-         "(mediane << moyenne) un oracle peut etre tres rentable avec MOINS de la moitie des fenetres "
-         "au-dessus du peage. La MARGE (PLAFOND - SEUIL) est publiee pour memoire mais "
-         "soustrait DEUX TAUX DE NATURES DIFFERENTES : indicateur, jamais verdict.");
-   Print("Fenetres GLISSANTES au pas de 1 min : elles se CHEVAUCHENT (H-1 minutes communes) et ne sont "
-         "PAS des tirages independants — l'equivalent non chevauchant (~used/H) est publie et c'est LUI "
-         "qui porte la regle des 10 000. Comptage STRICT : un mouvement EGAL au cout ne paie pas le "
-         "peage et n'est pas compte. « ecart >= 30 min » / « ecart < 30 min » = ce qui est MESURE (une "
-         "duree), pas la cause (le script ne distingue pas un week-end d'un trou de donnees).");
+      Print("─── ORACLE CEILING, PER HORIZON (all rolling windows) ───");
+   Print("★ THE PROFITABILITY JUDGE IS THE EXPECTANCY (MEAN ampl. - cost): an oracle with a PERFECT "
+         "direction earns (|d| - cost) on every window, so it is profitable IFF mean(|d|) > cost. "
+         "The CEILING (share of windows where |d| > cost) measures something else: with fat tails "
+         "(median << mean) an oracle can be very profitable with FEWER than half the windows "
+         "above the toll. The MARGIN (CEILING - THRESHOLD) is published for the record but "
+         "subtracts TWO RATES OF DIFFERENT NATURES: an indicator, never a verdict.");
+   Print("ROLLING windows at a 1 min step: they OVERLAP (H-1 minutes in common) and are "
+         "NOT independent draws — the non-overlapping equivalent (~used/H) is published and it is THAT "
+         "one which carries the 10 000 rule. STRICT counting: a move EQUAL to the cost does not pay the "
+         "toll and is not counted. \"gap >= 30 min\" / \"gap < 30 min\" = what is MEASURED (a "
+         "duration), not the cause (the script does not tell a weekend from a data hole).");
 
    double amp[];
    if(!HP_Resize(amp, got, "amplitudes"))
@@ -641,45 +639,44 @@ void OnStart()
       int    used = 0, exclPause = 0, exclMissing = 0;
       int    over = 0, overWin = 0, usedWin = 0, atCost = 0;
       double sumAmp = 0.0;
-      // v1.02 : la dernière ouverture RÉELLEMENT mesurable pour CET horizon.
-      // Elle dépend de H dès que la période touche la fin des données lues —
-      // l'inégalité que la borne « fin libre » évite du côté To revient par
-      // le côté données, et elle est DITE sur la ligne (revue).
+      // v1.02: the last opening ACTUALLY measurable for THIS horizon. It
+      // depends on H as soon as the period reaches the end of the data read —
+      // the inequality that the "free end" bound avoids on the To side comes
+      // back from the data side, and it is SAID on the line.
       const int iLast = (int)MathMin((double)iTo, (double)(got - 1 - H));
 
-      // v1.02 : l'OUVERTURE i est bornée à la période [iFrom ; iTo] ; la FIN
-      // (i+H) n'est bornée que par les données — une fenêtre a le droit de se
-      // terminer après HP_DateTo (sinon les horizons longs seraient tronqués
-      // davantage et les colonnes cesseraient d'être comparables). Aux
-      // défauts, iFrom = 0 et iTo = got-1 : la condition binding redevient
-      // « i + H < got », exactement la boucle de la v1.01.
+      // v1.02: the OPENING i is bounded to the period [iFrom ; iTo]; the END
+      // (i+H) is bounded only by the data — a window is allowed to end after
+      // HP_DateTo (otherwise long horizons would be truncated more and the
+      // columns would stop being comparable). With the defaults, iFrom = 0 and
+      // iTo = got-1: the binding condition becomes "i + H < got" again, exactly
+      // the v1.01 loop.
       for(int i = iFrom; i <= iTo && i + H < got; i++)
         {
-         // Fenêtre retenue SSI elle dure EXACTEMENT H minutes.
+         // A window is kept IFF it lasts EXACTLY H minutes.
          const long elapsed = (long)(rates[i + H].time - rates[i].time);
          if(elapsed != need)
            {
-            // Classement sur LE PLUS GRAND ÉCART DANS la fenêtre.
+            // Classified on THE LARGEST GAP INSIDE the window.
             if(lastPause[i + H] > i) exclPause++;
             else                     exclMissing++;
             continue;
            }
-         // Quantification EXPLICITE : les prix sont des multiples du point,
-         // l'arrondi est exact — il supprime la loterie d'arrondi binaire sur
-         // les fenêtres exactement au coût (revue).
+         // EXPLICIT quantisation: prices are multiples of the point, so the
+         // rounding is exact — it removes the binary-rounding lottery on
+         // windows sitting exactly at the cost.
          const double d = MathRound(MathAbs(rates[i + H].close - rates[i].close) / point);
          amp[used] = d;
          sumAmp   += d;
-         if(d > costPts)                        // coût MÉDIAN (strict)
+         if(d > costPts)                        // MEDIAN cost (strict)
             over++;
          else if(d == costPts)
             atCost++;
-         // COÛT DE LA FENÊTRE : uniquement sur les ouvertures TARIFÉES —
-         // une barre à spread 0 (historique importé) donnerait un péage de
-         // ZÉRO et ferait passer ~toutes ses fenêtres, gonflant la colonne
-         // qui sert justement à chiffrer le biais du coût constant (revue,
-         // HIGH : la contamination se serait lue comme une corrélation
-         // spread/mouvement).
+         // WINDOW COST: only on PRICED openings — a bar at spread 0 (imported
+         // history) would give a toll of ZERO and let ~all of its windows
+         // through, inflating the very column that is meant to quantify the
+         // bias of a constant cost (the contamination would have read as a
+         // spread/move correlation).
          if(rates[i].spread > 0)
            {
             usedWin++;
@@ -692,116 +689,115 @@ void OnStart()
       const int seen = used + exclPause + exclMissing;
       if(seen == 0)
         {
-         // CAUSE STRUCTURELLE, distinguée du cas « tout a été écarté » : aucune
-         // fenêtre n'a même pu S'OUVRIR — la période commence trop près de la
-         // fin des données lues pour cet horizon (revue).
-         PrintFormat("H=%3d min | ⛔ AUCUNE fenetre ne peut S'OUVRIR : la periode debute le %s et "
-                     "l'historique lu s'arrete le %s — il faut %d min apres l'ouverture. Cause "
-                     "STRUCTURELLE : aucune fenetre n'a ete ECARTEE, il n'y en avait aucune.",
+         // STRUCTURAL cause, distinguished from "everything was discarded": no
+         // window could even OPEN — the period starts too close to the end of
+         // the data read for this horizon.
+         PrintFormat("H=%3d min | ⛔ NO window can OPEN: the period starts on %s and "
+                     "the history read ends on %s — %d min are needed after the opening. "
+                     "STRUCTURAL cause: no window was DISCARDED, there were none.",
                      H, TimeToString(rates[iFrom].time, TIME_DATE|TIME_MINUTES),
                      TimeToString(rates[got - 1].time, TIME_DATE|TIME_MINUTES), H);
          continue;
         }
       if(used == 0)
         {
-         PrintFormat("H=%3d min | ⛔ AUCUNE fenetre exploitable sur %d (ecart >= 30 min : %d, ecart < 30 "
-                     "min : %d) — cet horizon ne mesure RIEN.", H, seen, exclPause, exclMissing);
+         PrintFormat("H=%3d min | ⛔ NO usable window out of %d (gap >= 30 min: %d, gap < 30 "
+                     "min: %d) — this horizon measures NOTHING.", H, seen, exclPause, exclMissing);
          continue;
         }
 
       double ampUsed[];
-      if(!HP_Resize(ampUsed, used, "amplitudes retenues"))
+      if(!HP_Resize(ampUsed, used, "kept amplitudes"))
          return;
       ArrayCopy(ampUsed, amp, 0, 0, used);
       ArraySort(ampUsed);
       const double ampMed  = HP_Quantile(ampUsed, 0.50);
       const double ampMean = sumAmp / used;
 
-      const double ceiling    = (double)over / used;      // PLAFOND, coût médian
-      // PLAFOND au coût de la fenêtre : rapporté aux seules ouvertures
-      // TARIFÉES, et « n/a » si aucune (jamais un nombre à la place d'une
-      // valeur non définie).
+      const double ceiling    = (double)over / used;      // CEILING, median cost
+      // CEILING at the window cost: related to the PRICED openings only, and
+      // "n/a" if there are none (never a number in place of an undefined value).
       const string ceilWinTxt = (usedWin > 0
                                    ? StringFormat("%5.1f%%", 100.0 * overWin / usedWin)
                                    : "  n/a");
-      const double expect     = ampMean - costPts;        // ★ ESPÉRANCE DE L'ORACLE (points)
-      const int    indep      = used / H;                 // équivalent NON chevauchant
+      const double expect     = ampMean - costPts;        // ★ ORACLE EXPECTANCY (points)
+      const int    indep      = used / H;                 // NON-overlapping equivalent
       const double retention  = (double)used / seen;
 
-      //--- Ratio et seuil : « n/a » explicite si l'amplitude est nulle — un
-      //    instrument de mesure ne substitue JAMAIS un nombre (0,0, qui est
-      //    ici la valeur la PLUS optimiste) à une valeur non définie (revue).
+      //--- Ratio and threshold: explicit "n/a" if the amplitude is zero — a
+      //    measuring instrument NEVER substitutes a number (0.0, which is here
+      //    the MOST optimistic value) for an undefined one.
       const string ratioTxt = (ampMed > 0.0
                                  ? StringFormat("%5.1f%%", 100.0 * costPts / ampMed)
-                                 : "  n/a (ampl. mediane NULLE)");
+                                 : "  n/a (MEDIAN ampl. is ZERO)");
       string seuilTxt, margeTxt;
       if(ampMean > 0.0)
         {
          const double thresh = 0.5 + costPts / (2.0 * ampMean);
          seuilTxt = (thresh > 1.0
-                       ? StringFormat("%5.1f%% ⛔ INATTEIGNABLE (> 100 %% : meme une direction PARFAITE "
-                                      "ne paie pas le peage)", 100.0 * thresh)
+                       ? StringFormat("%5.1f%% ⛔ UNREACHABLE (> 100 %%: even a PERFECT direction "
+                                      "does not pay the toll)", 100.0 * thresh)
                        : StringFormat("%5.1f%%", 100.0 * thresh));
-         margeTxt = StringFormat("%+6.1f pts de %%", 100.0 * (ceiling - thresh));
+         margeTxt = StringFormat("%+6.1f pts of %%", 100.0 * (ceiling - thresh));
         }
       else
         {
-         seuilTxt = "n/a"; margeTxt = "n/a (aucune amplitude sur cet horizon)";
+         seuilTxt = "n/a"; margeTxt = "n/a (no amplitude on this horizon)";
         }
 
-      PrintFormat("H=%3d min | fenetres %7d (~%6d non chevauchantes) | retention %5.1f%% "
-                  "[ecart >= 30 min %6d / ecart < 30 min %6d] | PLAFOND %5.1f%% (cout median) / %s "
-                  "(cout de la fenetre, sur %d ouverture(s) a spread renseigne) | ampl. mediane %7.0f pts "
-                  "(%8.2f $), moyenne %7.0f pts | cout/ampl.med %s | ★ ESPERANCE ORACLE %+8.0f pts "
-                  "(%+8.2f $) %s | SEUIL %s | MARGE %s%s%s%s%s",
+      PrintFormat("H=%3d min | windows %7d (~%6d non-overlapping) | retention %5.1f%% "
+                  "[gap >= 30 min %6d / gap < 30 min %6d] | CEILING %5.1f%% (median cost) / %s "
+                  "(window cost, over %d priced opening(s)) | median ampl. %7.0f pts "
+                  "(%8.2f), mean %7.0f pts | cost/median ampl. %s | ★ ORACLE EXPECTANCY %+8.0f pts "
+                  "(%+8.2f) %s | THRESHOLD %s | MARGIN %s%s%s%s%s",
                   H, used, indep, 100.0 * retention, exclPause, exclMissing,
                   100.0 * ceiling, ceilWinTxt, usedWin,
                   ampMed, ampMed * valuePerPoint, ampMean,
                   ratioTxt,
                   expect, expect * valuePerPoint,
-                  (expect > 0.0 ? "(> 0 : une direction PARFAITE paie le peage)"
-                                : "⛔ (<= 0 : meme une direction PARFAITE ne paie pas le peage)"),
+                  (expect > 0.0 ? "(> 0: a PERFECT direction pays the toll)"
+                                : "⛔ (<= 0: even a PERFECT direction does not pay the toll)"),
                   seuilTxt, margeTxt,
-                  (atCost > 0 ? StringFormat(" | %d fenetre(s) EXACTEMENT au cout (non comptees, strict)",
+                  (atCost > 0 ? StringFormat(" | %d window(s) EXACTLY at the cost (not counted, strict)",
                                              atCost) : ""),
                   (indep < HP_MIN_WINDOWS
-                     ? StringFormat(" | ⚠️ ~%d fenetres INDEPENDANTES (< %d) : NON CONCLUANT",
+                     ? StringFormat(" | ⚠️ ~%d INDEPENDENT windows (< %d): NOT CONCLUSIVE",
                                     indep, HP_MIN_WINDOWS) : ""),
                   (retention < HP_MIN_RETENTION
-                     ? StringFormat(" | ⚠️ retention %.1f%% : les fenetres retenues sont celles SANS "
-                                    "minute creuse, donc les plages les plus ACTIVES — amplitude et "
-                                    "plafond biaises VERS LE HAUT", 100.0 * retention) : ""),
-                  // v1.02 (revue) : la fin de la periode est tronquee par les
-                  // DONNEES, et H fois plus fort pour l'horizon H — cette
-                  // colonne ne couvre alors pas la meme fenetre de temps que
-                  // les autres. Dit sur la ligne, jamais suppose.
-                  // ⚠️ UNIQUEMENT en mode PERIODE : au defaut, iTo = got-1 et
-                  // « les H dernieres barres n'ouvrent pas de fenetre » est la
-                  // situation normale de tout historique — aucune borne n'a ete
-                  // PUBLIEE qui pourrait mentir, et l'avertir a chaque ligne
-                  // romprait l'identite du tableau avec la v1.01.
+                     ? StringFormat(" | ⚠️ retention %.1f%%: the windows kept are those WITHOUT a "
+                                    "missing minute, hence the most ACTIVE stretches — amplitude and "
+                                    "ceiling biased UPWARDS", 100.0 * retention) : ""),
+                  // v1.02: the end of the period is truncated by the DATA, and H
+                  // times harder for horizon H — that column then does not cover
+                  // the same time window as the others. Said on the line, never
+                  // assumed.
+                  // ⚠️ ONLY in PERIOD mode: with the default, iTo = got-1 and
+                  // "the last H bars open no window" is the normal situation of
+                  // any history — no bound was PUBLISHED that could mislead, and
+                  // warning on every line would break the identity of the table
+                  // with v1.01.
                   (ranged && iLast < iTo
-                     ? StringFormat(" | ⚠️ derniere ouverture MESUREE %s (l'historique lu s'arrete le %s) "
-                                    ": %d ouverture(s) de fin de periode non mesurables pour H=%d — "
-                                    "comparaison inter-colonnes degradee sur la queue",
+                     ? StringFormat(" | ⚠️ last MEASURED opening %s (the history read ends on %s) "
+                                    ": %d end-of-period opening(s) not measurable for H=%d — "
+                                    "cross-column comparison degraded on the tail",
                                     TimeToString(rates[iLast].time, TIME_DATE|TIME_MINUTES),
                                     TimeToString(rates[got - 1].time, TIME_DATE|TIME_MINUTES),
                                     iTo - iLast, H) : ""));
      }
 
    if(costSuspect)
-      Print("⛔ RAPPEL SOUS LE TABLEAU : le cout de cette passe est suspect (spread fixe, quasi fixe ou "
-            "changement de regime — voir plus haut). TOUTES les lignes ci-dessus en dependent : elles ne "
-            "mesurent pas un cout observe. Repeter ce rappel ici est volontaire — un lecteur qui ne lit "
-            "que le tableau ne doit pas pouvoir rater l'information.");
+      Print("⛔ REMINDER BELOW THE TABLE: the cost of this run is suspect (fixed spread, nearly fixed, or "
+            "regime change — see above). EVERY line above depends on it: they do not "
+            "measure an observed cost. Repeating this reminder here is deliberate — a reader who only "
+            "reads the table must not be able to miss it.");
    if(ranged)
-      PrintFormat("═══ FIN — ce script MESURE, il n'optimise rien et ne trade rien. Aucune hypothese de "
-                  "distribution : toutes les fenetres OUVRANT dans [%s ; %s] ont ete parcourues "
-                  "(%d ouverture(s) candidates sur %d barre(s) lues). ═══",
+      PrintFormat("═══ END — this script MEASURES, it optimises nothing and trades nothing. No "
+                  "distribution assumption: every window OPENING inside [%s ; %s] was walked "
+                  "(%d candidate opening(s) out of %d bar(s) read). ═══",
                   TimeToString(rates[iFrom].time, TIME_DATE|TIME_MINUTES),
                   TimeToString(rates[iTo].time,   TIME_DATE|TIME_MINUTES), nRange, got);
    else
-      Print("═══ FIN — ce script MESURE, il n'optimise rien et ne trade rien. Aucune hypothese de "
-            "distribution : toutes les fenetres glissantes de l'historique lu ont ete parcourues. ═══");
+      Print("═══ END — this script MEASURES, it optimises nothing and trades nothing. No "
+            "distribution assumption: every rolling window of the history read was walked. ═══");
   }
 //+------------------------------------------------------------------+
