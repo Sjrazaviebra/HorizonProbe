@@ -1,0 +1,7 @@
+# MetaTrader compiles these — never commit binaries
+*.ex5
+*.ex4
+
+# OS
+Thumbs.db
+.DS_Store

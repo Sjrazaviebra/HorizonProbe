@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="HorizonProbe">
+  <title>HorizonProbe</title>
+  <desc>The average move grows with the holding time; the toll does not. Left of the crossing, even a perfect direction loses money. The dot is the answer the tool measures.</desc>
+
+  <defs>
+    <linearGradient id="hpBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B1614"/>
+      <stop offset="1" stop-color="#050A09"/>
+    </linearGradient>
+    <filter id="hpGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="104" fill="url(#hpBg)"/>
+  <rect x="4" y="4" width="504" height="504" rx="100" fill="none" stroke="#123330" stroke-width="8"/>
+
+  <!-- THE TOLL — flat. The spread does not care how long you hold. -->
+  <line x1="86" y1="230" x2="426" y2="230" stroke="#F0655A" stroke-width="7"
+        stroke-linecap="round" stroke-dasharray="16 13" opacity="0.9"/>
+
+  <!-- THE MOVE — grows as the square root of time, so it starts BELOW the toll -->
+  <path d="M 96 292 C 110 268, 122 246, 138 230" fill="none" stroke="#F0655A"
+        stroke-width="15" stroke-linecap="round"/>
+  <path d="M 138 230 C 190 186, 268 150, 416 120" fill="none" stroke="#38E5D4"
+        stroke-width="15" stroke-linecap="round" filter="url(#hpGlow)"/>
+
+  <!-- THE CROSSING — the number this tool exists to measure -->
+  <line x1="138" y1="230" x2="138" y2="306" stroke="#38E5D4" stroke-width="5"
+        stroke-linecap="round" stroke-dasharray="9 9" opacity="0.55"/>
+  <circle cx="138" cy="230" r="17" fill="#050A09" stroke="#38E5D4" stroke-width="8"/>
+
+  <!-- initials only — no version number in the mark -->
+  <text x="256" y="424" text-anchor="middle"
+        font-family="'Fira Code','JetBrains Mono','DejaVu Sans Mono',monospace"
+        font-size="122" font-weight="700" letter-spacing="8" fill="#EAF6F4">HP</text>
+</svg>
