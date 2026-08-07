@@ -5,3 +5,7 @@
 # OS
 Thumbs.db
 .DS_Store
+
+# Captures Market : les BRUTES ne sont pas versionnees, seul le LISEZ-MOI l est
+market_screens/*
+!market_screens/LISEZ-MOI.md
